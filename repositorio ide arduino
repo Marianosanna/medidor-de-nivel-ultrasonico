@@ -1,0 +1,185 @@
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266mDNS.h>
+
+#define PIN_TRIG D5
+#define PIN_ECHO D6
+#define PIN_RELE D2
+
+float tiempo;
+float distancia;
+
+MDNSResponder mdns;
+
+//---------------------------------------------------------------
+ESP8266WebServer server(80);
+
+
+//-------------------VARIABLES GLOBALES--------------------------
+int contconexion = 0;
+
+int LED = 16;
+const char *ssid = "************";
+const char *password = "************";
+
+String XML, xmlNivel; 
+
+unsigned long previousMillis = 0;
+
+//--------CODIGO HTML y JavaScript-------------
+String webSite = "<!DOCTYPE html>"
+"<html>"
+"<head>"
+"<meta charset='utf-8' />"
+"<title>Web Server</title>"
+"<link rel=\"icon\" href=\"imagenes/favicon.ico\">"
+"<script type='text/javascript'>"
+"function loadDoc(){"
+"  var xhttp = new XMLHttpRequest();"
+"  xhttp.onreadystatechange = function() {"
+"    if (this.readyState == 4 && this.status == 200) {"
+"      myFunction(this);"
+"    }"
+"  };"
+"  xhttp.open('GET','xml',true);"
+"  xhttp.send();"
+"  setTimeout('loadDoc()',500);"
+"}"
+"function myFunction(xml){"
+"  var i;"
+"  var xmlDoc = xml.responseXML;"
+"  var dato ='';"
+"  dato = xmlDoc.getElementsByTagName('Nivel')[0].childNodes[0].nodeValue;"
+"  document.getElementById('Nivel').innerHTML = dato;"
+"}"
+"</script>"
+"<style>"
+"  button{"
+"   background:#161F27;"
+"   color:#fff;"
+"   font-size:1.25em;"
+"   margin:35px"
+"   padding:20px 0px;"
+"   text-align:center;"
+"   width:300;"
+"   high:150;"
+"}"
+"  h1,a,p{"
+"   color:#ffffff;"
+"}"
+"  body{"
+"   background-color:#0066aa;"
+"}"
+"  #Nivel{"
+"   font-weight:bolder;"
+"}"
+"</style>"
+"</head>"
+"<body onload='loadDoc()'>"
+"<h1>Medidor Nivel de Rio</h1>"
+"<a>Nivel = </a>"
+"<a id='Nivel'></a>"
+"<a><strong>  Centimetros</strong></a>"
+"</body>"
+"</html>";
+
+void construirXML(){
+  XML="";
+  XML+="<Nivel>";
+  XML+=xmlNivel;
+  XML+="</Nivel>";
+}
+
+void handleWebsite(){
+  server.send(200,"text/html",webSite);
+}
+
+void handleXML(){
+
+  construirXML();
+  server.send(200,"text/xml",XML);
+}
+
+
+//---------------------------SETUP-------------------------------
+void setup() {
+
+  // Inicia Serial
+  Serial.begin(9600);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+  pinMode(PIN_RELE, OUTPUT);
+  Serial.println("");
+
+  pinMode(LED,OUTPUT);
+
+  // Conexión WIFI
+  Serial.print("Conectando con ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED){
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+  
+  if (mdns.begin("esp8266", WiFi.localIP())) {
+    Serial.println("MDNS responder started");
+  }
+
+  server.on("/",handleWebsite);
+  server.on("/xml",handleXML);
+
+  server.on("/", [](){
+    server.send(200, "text/html", webSite);
+  });
+  server.on("/socket1On", [](){
+    server.send(200, "text/html", webSite);
+    digitalWrite(LED, HIGH);
+    delay(1000);
+  });
+  server.on("/socket1Off", [](){
+    server.send(200, "text/html", webSite);
+    digitalWrite(LED, LOW);
+    delay(1000); 
+  });
+  server.begin();
+
+}
+
+//--------------------------LOOP--------------------------------
+void loop() {
+
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= 1000) { 
+   previousMillis = currentMillis;
+   digitalWrite(PIN_TRIG, LOW);  
+   delayMicroseconds(4);
+   digitalWrite(PIN_TRIG, HIGH); 
+   delayMicroseconds(10);
+   digitalWrite(PIN_TRIG, LOW);
+   tiempo = pulseIn(PIN_ECHO, HIGH);
+   distancia = tiempo *0.01715;
+   Serial.print("Distancia: ");
+   Serial.print(distancia);
+   Serial.println(" cm");
+   if (distancia < 2) {
+    digitalWrite(PIN_RELE, LOW);
+  }
+  else {
+    digitalWrite(PIN_RELE, HIGH);
+  }
+  {xmlNivel = String(distancia, 1);
+   delay(3000);
+}
+   
+  }
+
+  server.handleClient();
+}
